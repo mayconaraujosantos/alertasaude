@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Image,
   RefreshControl,
@@ -11,11 +10,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import UserHeader from '../components/UserHeader';
 import { databaseManager } from '../database/DatabaseManager';
+import { useModal } from '../hooks/useModal';
 import { Medicine } from '../types';
 
 interface MedicinesScreenProps {
-  navigation: any;
+  readonly navigation: any;
 }
 
 export default function MedicinesScreen({ navigation }: MedicinesScreenProps) {
@@ -23,11 +24,13 @@ export default function MedicinesScreen({ navigation }: MedicinesScreenProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const { Modal, showError, showSuccess, showConfirm } = useModal();
+
   // Usar useFocusEffect para garantir reload no iOS
   useFocusEffect(
     useCallback(() => {
       console.log(
-        'MedicinesScreen focused (useFocusEffect), reloading medicines...'
+        '👁️ [MedicinesScreen] Screen focused (useFocusEffect), reloading medicines...'
       );
       loadMedicines();
     }, [])
@@ -40,13 +43,33 @@ export default function MedicinesScreen({ navigation }: MedicinesScreenProps) {
 
   const loadMedicines = async () => {
     try {
-      console.log('Loading medicines...');
+      console.log('🔄 [MedicinesScreen] Loading medicines...');
+      setLoading(true);
+
       const medicinesList = await databaseManager.getAllMedicines();
-      console.log('Medicines loaded:', medicinesList.length, 'items');
+      console.log(
+        `✅ [MedicinesScreen] Medicines loaded: ${medicinesList.length} items`
+      );
+
+      // Log detalhado dos medicamentos carregados
+      if (medicinesList.length > 0) {
+        console.log(
+          '📋 [MedicinesScreen] Medicines details:',
+          medicinesList.map(m => ({
+            id: m.id,
+            name: m.name,
+            dosage: m.dosage,
+            hasImage: !!m.imageUri,
+          }))
+        );
+      } else {
+        console.log('📋 [MedicinesScreen] No medicines found in database');
+      }
+
       setMedicines(medicinesList);
     } catch (error) {
-      console.error('Error loading medicines:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os medicamentos');
+      console.error('❌ [MedicinesScreen] Error loading medicines:', error);
+      showError('Erro', 'Não foi possível carregar os medicamentos');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,179 +77,156 @@ export default function MedicinesScreen({ navigation }: MedicinesScreenProps) {
   };
 
   const onRefresh = () => {
+    console.log('🔄 [MedicinesScreen] Pull to refresh triggered');
     setRefreshing(true);
     loadMedicines();
   };
 
-  const debugDatabase = async () => {
+  const _debugDatabase = async () => {
     try {
+      console.log('🔍 [MedicinesScreen] Starting database debug...');
       await databaseManager.debugDatabaseState();
-      Alert.alert('Debug', 'Verifique o console para informações do banco');
+
+      // Debug adicional específico para medicamentos
+      const allMeds = await databaseManager.getAllMedicines();
+      console.log('🔍 [DEBUG] Current medicines count:', allMeds.length);
+      console.log(
+        '🔍 [DEBUG] Current state medicines count:',
+        medicines.length
+      );
+
+      showSuccess(
+        'Debug Completo',
+        `DB: ${allMeds.length} medicamentos\nState: ${medicines.length} medicamentos\n\nVerifique o console para detalhes`
+      );
     } catch (error) {
-      console.error('Debug error:', error);
-      Alert.alert('Erro', 'Erro ao fazer debug do banco');
+      console.error('❌ [MedicinesScreen] Debug error:', error);
+      showError('Erro', 'Erro ao fazer debug do banco');
     }
   };
 
   const deleteMedicine = async (id: number, name: string) => {
-    Alert.alert(
+    showConfirm(
       'Confirmar Exclusão',
       `Tem certeza que deseja excluir "${name}"? Esta ação não pode ser desfeita.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await databaseManager.deleteMedicine(id);
-              await loadMedicines();
-              Alert.alert('Sucesso', 'Medicamento excluído com sucesso');
-            } catch (error) {
-              console.error('Error deleting medicine:', error);
-              Alert.alert('Erro', 'Não foi possível excluir o medicamento');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          console.log(
+            `🗑️ [MedicinesScreen] Deleting medicine: ${name} (ID: ${id})`
+          );
+          await databaseManager.deleteMedicine(id);
+          console.log(
+            `✅ [MedicinesScreen] Medicine deleted successfully: ${name}`
+          );
+          await loadMedicines();
+          showSuccess('Sucesso', 'Medicamento excluído com sucesso');
+        } catch (error) {
+          console.error(
+            `❌ [MedicinesScreen] Error deleting medicine ${name}:`,
+            error
+          );
+          showError('Erro', 'Não foi possível excluir o medicamento');
+        }
+      }
     );
   };
 
-  const renderMedicineItem = ({ item }: { item: Medicine }) => (
-    <View
-      style={{
-        backgroundColor: 'white',
-        margin: 8,
-        padding: 16,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-        {item.imageUri ? (
-          <Image
-            source={{ uri: item.imageUri }}
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 8,
-              marginRight: 12,
-            }}
-          />
-        ) : (
-          <View
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 8,
-              backgroundColor: '#e5e7eb',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginRight: 12,
-            }}
-          >
-            <Ionicons name="medical" size={24} color="#6b7280" />
+  const renderMedicineItem = ({ item }: { item: Medicine }) => {
+    console.log(
+      `🎯 [MedicinesScreen] Rendering medicine item: ${item.name} (ID: ${item.id})`
+    );
+    return (
+      <View className="bg-white mx-4 mb-4 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <View className="p-6">
+          <View className="flex-row items-start mb-4">
+            {item.imageUri ? (
+              <View className="w-16 h-16 rounded-2xl overflow-hidden mr-4 shadow-sm">
+                <Image
+                  source={{ uri: item.imageUri }}
+                  className="w-full h-full"
+                  resizeMode="cover"
+                />
+              </View>
+            ) : (
+              <View className="w-16 h-16 rounded-2xl bg-blue-100 justify-center items-center mr-4">
+                <Ionicons name="medical" size={28} color="#3b82f6" />
+              </View>
+            )}
+
+            <View className="flex-1">
+              <Text className="text-xl font-bold text-gray-900 mb-2">
+                {item.name}
+              </Text>
+
+              <View className="flex-row items-center mb-2">
+                <Ionicons name="flask-outline" size={16} color="#6b7280" />
+                <Text className="text-sm font-medium text-gray-600 ml-2">
+                  {item.dosage}
+                </Text>
+              </View>
+
+              {item.description ? (
+                <Text className="text-sm text-gray-600 leading-5 mb-2">
+                  {item.description}
+                </Text>
+              ) : null}
+
+              <View className="flex-row items-center">
+                <Ionicons name="calendar-outline" size={12} color="#9ca3af" />
+                <Text className="text-xs text-gray-400 ml-1">
+                  {new Date(item.createdAt).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+            </View>
           </View>
-        )}
 
-        <View style={{ flex: 1 }}>
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '600',
-              color: '#1f2937',
-              marginBottom: 4,
-            }}
-          >
-            {item.name}
-          </Text>
+          {/* Botões de ação */}
+          <View className="flex-row space-x-3">
+            <TouchableOpacity
+              className="flex-1 bg-blue-500 py-3 rounded-xl items-center flex-row justify-center"
+              onPress={() =>
+                navigation.navigate('AddSchedule', { medicine: item })
+              }
+            >
+              <Ionicons name="time" size={18} color="white" />
+              <Text className="text-white font-bold ml-2">Agendar</Text>
+            </TouchableOpacity>
 
-          <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 4 }}>
-            Dosagem: {item.dosage}
-          </Text>
+            <TouchableOpacity
+              className="bg-gray-500 py-3 px-4 rounded-xl items-center justify-center"
+              onPress={() =>
+                navigation.navigate('EditMedicine', { medicine: item })
+              }
+            >
+              <Ionicons name="pencil" size={18} color="white" />
+            </TouchableOpacity>
 
-          {item.description && (
-            <Text style={{ fontSize: 14, color: '#374151' }}>
-              {item.description}
-            </Text>
-          )}
-
-          <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 8 }}>
-            Criado em: {new Date(item.createdAt).toLocaleDateString('pt-BR')}
-          </Text>
+            <TouchableOpacity
+              className="bg-red-500 py-3 px-4 rounded-xl items-center justify-center"
+              onPress={() => deleteMedicine(item.id!, item.name)}
+            >
+              <Ionicons name="trash" size={18} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
+    );
+  };
 
-      <View
-        style={{
-          flexDirection: 'row',
-          marginTop: 12,
-          gap: 8,
-        }}
-      >
-        <TouchableOpacity
-          style={{
-            flex: 1,
-            backgroundColor: '#3b82f6',
-            paddingVertical: 8,
-            borderRadius: 8,
-            alignItems: 'center',
-            flexDirection: 'row',
-            justifyContent: 'center',
-            gap: 4,
-          }}
-          onPress={() => navigation.navigate('AddSchedule', { medicine: item })}
-        >
-          <Ionicons name="time" size={16} color="white" />
-          <Text style={{ color: 'white', fontWeight: '600' }}>Agendar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={{
-            backgroundColor: '#6b7280',
-            paddingVertical: 8,
-            paddingHorizontal: 12,
-            borderRadius: 8,
-            alignItems: 'center',
-          }}
-          onPress={() =>
-            navigation.navigate('EditMedicine', { medicine: item })
-          }
-        >
-          <Ionicons name="pencil" size={16} color="white" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={{
-            backgroundColor: '#ef4444',
-            paddingVertical: 8,
-            paddingHorizontal: 12,
-            borderRadius: 8,
-            alignItems: 'center',
-          }}
-          onPress={() => deleteMedicine(item.id!, item.name)}
-        >
-          <Ionicons name="trash" size={16} color="white" />
-        </TouchableOpacity>
-      </View>
-    </View>
+  // Log de estado para debug
+  console.log(
+    `🎨 [MedicinesScreen] Rendering - Loading: ${loading}, Medicines: ${medicines.length}, Refreshing: ${refreshing}`
   );
 
   if (loading) {
+    console.log('⏳ [MedicinesScreen] Showing loading screen');
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#f9fafb',
-        }}
-      >
-        <Text style={{ fontSize: 18, color: '#6b7280' }}>
+      <SafeAreaView className="flex-1 justify-center items-center bg-gray-50">
+        <Text className="text-lg text-gray-500">
           Carregando medicamentos...
         </Text>
       </SafeAreaView>
@@ -234,126 +234,62 @@ export default function MedicinesScreen({ navigation }: MedicinesScreenProps) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <View
-        style={{
-          padding: 16,
-          backgroundColor: 'white',
-          borderBottomWidth: 1,
-          borderBottomColor: '#e5e7eb',
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <View>
-          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1f2937' }}>
-            💊 Meus Medicamentos
-          </Text>
-          <Text style={{ fontSize: 16, color: '#6b7280' }}>
-            {medicines.length} medicamento(s) cadastrado(s)
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={{
-            backgroundColor: '#10b981',
-            padding: 12,
-            borderRadius: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onPress={() => navigation.navigate('AddMedicine')}
-        >
-          <Ionicons name="add" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <UserHeader
+        backgroundColor="bg-purple-500"
+        title="Minha Farmácia"
+        subtitle={`${medicines.length} ${medicines.length === 1 ? 'medicamento' : 'medicamentos'} cadastrados`}
+        iconName="add"
+        iconColor="#8b5cf6"
+        onIconPress={() => navigation.navigate('AddMedicine')}
+        navigation={navigation}
+      />
 
       {medicines.length === 0 ? (
-        <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 32,
-          }}
-        >
-          <Ionicons name="medical-outline" size={64} color="#6b7280" />
-          <Text
-            style={{
-              fontSize: 20,
-              fontWeight: '600',
-              color: '#1f2937',
-              marginTop: 16,
-              textAlign: 'center',
-            }}
-          >
-            Nenhum medicamento cadastrado
-          </Text>
-          <Text
-            style={{
-              fontSize: 16,
-              color: '#6b7280',
-              marginTop: 8,
-              textAlign: 'center',
-            }}
-          >
-            Toque no + para adicionar seu primeiro medicamento
-          </Text>
+        <View className="flex-1 justify-center items-center px-8 -mt-20">
+          <View className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 items-center">
+            <View className="bg-purple-100 w-20 h-20 rounded-full items-center justify-center mb-4">
+              <Ionicons name="medical" size={48} color="#8b5cf6" />
+            </View>
 
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#10b981',
-              paddingHorizontal: 24,
-              paddingVertical: 12,
-              borderRadius: 12,
-              marginTop: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-            }}
-            onPress={() => navigation.navigate('AddMedicine')}
-          >
-            <Ionicons name="add" size={20} color="white" />
-            <Text style={{ color: 'white', fontWeight: '600' }}>
-              Adicionar Medicamento
+            <Text className="text-2xl font-bold text-gray-900 text-center mb-2">
+              Sua farmácia está vazia
             </Text>
-          </TouchableOpacity>
 
-          {/* Botão de Debug (temporário) */}
-          {__DEV__ && (
+            <Text className="text-base text-gray-600 text-center leading-6 mb-6">
+              Adicione seus medicamentos para começar a organizar seus
+              tratamentos.
+            </Text>
+
             <TouchableOpacity
-              style={{
-                backgroundColor: '#f59e0b',
-                paddingHorizontal: 20,
-                paddingVertical: 12,
-                borderRadius: 8,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-              }}
-              onPress={debugDatabase}
+              className="bg-purple-500 px-8 py-4 rounded-2xl flex-row items-center shadow-lg"
+              onPress={() => navigation.navigate('AddMedicine')}
             >
-              <Ionicons name="bug" size={20} color="white" />
-              <Text style={{ color: 'white', fontWeight: '600' }}>
-                Debug DB
+              <Ionicons name="add-circle" size={24} color="white" />
+              <Text className="text-white font-bold text-lg ml-2">
+                Adicionar Medicamento
               </Text>
             </TouchableOpacity>
-          )}
+
+            {/* Botões de Debug - apenas em desenvolvimento */}
+          </View>
         </View>
       ) : (
         <FlatList
           data={medicines}
           renderItem={renderMedicineItem}
-          keyExtractor={(item) =>
-            item.id?.toString() || Math.random().toString()
-          }
-          contentContainerStyle={{ paddingBottom: 16 }}
+          keyExtractor={item => item.id?.toString() || Math.random().toString()}
+          contentContainerStyle={{
+            paddingTop: 24,
+            paddingBottom: 120, // Espaço para tab bar flutuante
+          }}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         />
       )}
+      <Modal />
     </SafeAreaView>
   );
 }

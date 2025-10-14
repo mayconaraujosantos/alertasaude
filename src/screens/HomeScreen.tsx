@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
+  Dimensions,
   FlatList,
   RefreshControl,
   Text,
@@ -9,32 +10,74 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import UserHeader from '../components/UserHeader';
 import { databaseManager } from '../database/DatabaseManager';
+import { useModal } from '../hooks/useModal';
 import { DoseReminder } from '../types';
+
+const { width: _width } = Dimensions.get('window');
 
 interface ExtendedDoseReminder extends DoseReminder {
   medicineName?: string;
   dosage?: string;
+  timeCategory?: 'morning' | 'afternoon' | 'evening' | 'bedtime' | 'next';
+  timeLeft?: string;
 }
 
-export default function HomeScreen() {
+interface HomeScreenProps {
+  readonly navigation: any;
+}
+
+export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [todayReminders, setTodayReminders] = useState<ExtendedDoseReminder[]>(
     []
   );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const { Modal, showError, showSuccess, showConfirm } = useModal();
+
   useEffect(() => {
     loadTodayReminders();
   }, []);
 
+  // Usar useFocusEffect para garantir reload quando a tela ganhar foco
+  useFocusEffect(
+    useCallback(() => {
+      console.log('👁️ [HomeScreen] Screen focused, reloading reminders...');
+      loadTodayReminders();
+    }, [])
+  );
+
   const loadTodayReminders = async () => {
     try {
+      console.log('🔄 [HomeScreen] Loading today reminders...');
+      setLoading(true);
+
       const reminders = await databaseManager.getTodayReminders();
+      console.log(
+        `✅ [HomeScreen] Loaded ${reminders.length} reminders for today`
+      );
+
+      // Log detalhado dos lembretes
+      if (reminders.length > 0) {
+        console.log(
+          '📋 [HomeScreen] Reminders details:',
+          reminders.map(r => ({
+            id: r.id,
+            medicineName: (r as any).medicineName,
+            scheduledTime: r.scheduledTime,
+            isTaken: r.isTaken,
+          }))
+        );
+      } else {
+        console.log('📋 [HomeScreen] No reminders found for today');
+      }
+
       setTodayReminders(reminders);
     } catch (error) {
-      console.error('Error loading reminders:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os lembretes');
+      console.error('❌ [HomeScreen] Error loading reminders:', error);
+      showError('Erro', 'Não foi possível carregar os lembretes');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -47,25 +90,45 @@ export default function HomeScreen() {
   };
 
   const markAsTaken = async (reminderId: number) => {
-    try {
-      await databaseManager.markDoseAsTaken(reminderId);
-      await loadTodayReminders();
-      Alert.alert('✅ Dose Tomada', 'Medicamento marcado como tomado!');
-    } catch (error) {
-      console.error('Error marking dose as taken:', error);
-      Alert.alert('Erro', 'Não foi possível marcar como tomado');
-    }
+    showConfirm(
+      'Confirmar Medicamento',
+      'Você realmente tomou este medicamento agora?',
+      async () => {
+        try {
+          // Usar o novo método que cancela as notificações automaticamente
+          await databaseManager.markReminderAsTaken(reminderId);
+          await loadTodayReminders();
+          showSuccess(
+            '✅ Dose Tomada',
+            'Medicamento marcado como tomado e notificações canceladas!'
+          );
+        } catch (error) {
+          console.error('Error marking dose as taken:', error);
+          showError('Erro', 'Não foi possível marcar como tomado');
+        }
+      }
+    );
   };
 
   const markAsSkipped = async (reminderId: number) => {
-    try {
-      await databaseManager.markDoseAsSkipped(reminderId);
-      await loadTodayReminders();
-      Alert.alert('⏭️ Dose Pulada', 'Medicamento marcado como pulado');
-    } catch (error) {
-      console.error('Error marking dose as skipped:', error);
-      Alert.alert('Erro', 'Não foi possível marcar como pulado');
-    }
+    showConfirm(
+      'Pular Medicamento',
+      'Tem certeza que deseja pular este medicamento? Esta ação não pode ser desfeita.',
+      async () => {
+        try {
+          // Usar o novo método que cancela as notificações automaticamente
+          await databaseManager.skipReminder(reminderId);
+          await loadTodayReminders();
+          showSuccess(
+            '⏭️ Dose Pulada',
+            'Medicamento marcado como pulado e notificações canceladas'
+          );
+        } catch (error) {
+          console.error('Error marking dose as skipped:', error);
+          showError('Erro', 'Não foi possível marcar como pulado');
+        }
+      }
+    );
   };
 
   const formatTime = (dateString: string) => {
@@ -89,233 +152,141 @@ export default function HomeScreen() {
   };
 
   const renderReminderItem = ({ item }: { item: ExtendedDoseReminder }) => (
-    <View
-      style={{
-        backgroundColor: 'white',
-        margin: 8,
-        padding: 16,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-        borderLeftWidth: 4,
-        borderLeftColor: getStatusColor(item),
-      }}
-    >
+    <View className="bg-white mx-4 mb-4 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* Status bar colorida no topo */}
       <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              marginBottom: 8,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: '600',
-                color: '#1f2937',
-                marginRight: 8,
-              }}
-            >
-              {item.medicineName}
-            </Text>
-            <Text style={{ fontSize: 24 }}>{getStatusIcon(item)}</Text>
+        className="h-1 w-full"
+        style={{ backgroundColor: getStatusColor(item) }}
+      />
+
+      <View className="p-6">
+        <View className="flex-row items-start justify-between mb-4">
+          <View className="flex-1 mr-4">
+            <View className="flex-row items-center mb-2">
+              <View
+                className="w-3 h-3 rounded-full mr-3"
+                style={{ backgroundColor: getStatusColor(item) }}
+              />
+              <Text className="text-xl font-bold text-gray-900">
+                {item.medicineName}
+              </Text>
+            </View>
+
+            <Text className="text-sm text-gray-600 mb-2">{item.dosage}</Text>
+
+            <View className="flex-row items-center">
+              <Ionicons name="time-outline" size={16} color="#6b7280" />
+              <Text className="text-base font-semibold text-gray-800 ml-2">
+                {formatTime(item.scheduledTime)}
+              </Text>
+            </View>
+
+            {item.takenAt && (
+              <View className="flex-row items-center mt-2">
+                <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                <Text className="text-xs text-green-600 ml-1">
+                  Tomado às {formatTime(item.takenAt)}
+                </Text>
+              </View>
+            )}
           </View>
 
-          <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 4 }}>
-            Dosagem: {item.dosage}
-          </Text>
-
-          <Text style={{ fontSize: 16, color: '#374151', fontWeight: '500' }}>
-            🕐 {formatTime(item.scheduledTime)}
-          </Text>
-
-          {item.takenAt && (
-            <Text style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>
-              Tomado às {formatTime(item.takenAt)}
+          <View className="items-center">
+            <Text className="text-3xl mb-1">{getStatusIcon(item)}</Text>
+            <Text className="text-xs font-medium text-gray-500">
+              {(() => {
+                if (item.isTaken) return 'Tomado';
+                if (item.isSkipped) return 'Pulado';
+                return 'Pendente';
+              })()}
             </Text>
-          )}
+          </View>
         </View>
+
+        {!item.isTaken && !item.isSkipped && (
+          <View className="flex-row space-x-3">
+            <TouchableOpacity
+              className="flex-1 bg-green-500 py-3 rounded-xl items-center flex-row justify-center"
+              onPress={() => markAsTaken(item.id!)}
+            >
+              <Ionicons name="checkmark" size={18} color="white" />
+              <Text className="text-white font-bold ml-2">Tomei</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="flex-1 bg-amber-500 py-3 rounded-xl items-center flex-row justify-center"
+              onPress={() => markAsSkipped(item.id!)}
+            >
+              <Ionicons name="play-forward" size={18} color="white" />
+              <Text className="text-white font-bold ml-2">Pular</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-
-      {!item.isTaken && !item.isSkipped && (
-        <View
-          style={{
-            flexDirection: 'row',
-            marginTop: 12,
-            gap: 8,
-          }}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor: '#10b981',
-              paddingVertical: 8,
-              borderRadius: 8,
-              alignItems: 'center',
-            }}
-            onPress={() => markAsTaken(item.id!)}
-          >
-            <Text style={{ color: 'white', fontWeight: '600' }}>✅ Tomei</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor: '#f59e0b',
-              paddingVertical: 8,
-              borderRadius: 8,
-              alignItems: 'center',
-            }}
-            onPress={() => markAsSkipped(item.id!)}
-          >
-            <Text style={{ color: 'white', fontWeight: '600' }}>⏭️ Pular</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 
   if (loading) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#f9fafb',
-        }}
-      >
-        <Text style={{ fontSize: 18, color: '#6b7280' }}>
-          Carregando lembretes...
-        </Text>
+      <SafeAreaView className="flex-1 justify-center items-center bg-gray-50">
+        <Text className="text-lg text-gray-500">Carregando lembretes...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <View
-        style={{
-          padding: 16,
-          backgroundColor: 'white',
-          borderBottomWidth: 1,
-          borderBottomColor: '#e5e7eb',
-        }}
-      >
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1f2937' }}>
-          💊 Seus Medicamentos Hoje
-        </Text>
-        <Text style={{ fontSize: 16, color: '#6b7280', marginTop: 4 }}>
-          {new Date().toLocaleDateString('pt-BR', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </Text>
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <UserHeader
+        backgroundColor="bg-blue-500"
+        title="Seus Medicamentos Hoje"
+        subtitle={`${todayReminders.length} ${todayReminders.length === 1 ? 'lembrete' : 'lembretes'} para hoje`}
+        iconName="medical"
+        iconColor="#3b82f6"
+        navigation={navigation}
+      />
 
-        {/* Botões de Debug - remover depois */}
-        <View style={{ flexDirection: 'row', marginTop: 8, gap: 8 }}>
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#3b82f6',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 6,
-            }}
-            onPress={async () => {
-              await databaseManager.debugDatabaseState();
-            }}
-          >
-            <Text style={{ color: 'white', fontSize: 12 }}>Debug DB</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#10b981',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 6,
-            }}
-            onPress={loadTodayReminders}
-          >
-            <Text style={{ color: 'white', fontSize: 12 }}>Refresh</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#f59e0b',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 6,
-            }}
-            onPress={async () => {
-              await databaseManager.createTestReminders();
-              await loadTodayReminders();
-              Alert.alert('✅', 'Lembretes de teste criados!');
-            }}
-          >
-            <Text style={{ color: 'white', fontSize: 12 }}>Test Reminders</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      {/* Botões de Debug - apenas em desenvolvimento */}
 
       {todayReminders.length === 0 ? (
-        <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 32,
-          }}
-        >
-          <Ionicons name="checkmark-circle-outline" size={64} color="#10b981" />
-          <Text
-            style={{
-              fontSize: 20,
-              fontWeight: '600',
-              color: '#1f2937',
-              marginTop: 16,
-              textAlign: 'center',
-            }}
-          >
-            Nenhum lembrete para hoje!
-          </Text>
-          <Text
-            style={{
-              fontSize: 16,
-              color: '#6b7280',
-              marginTop: 8,
-              textAlign: 'center',
-            }}
-          >
-            Você está em dia com seus medicamentos
-          </Text>
+        <View className="flex-1 justify-center items-center px-8 -mt-20">
+          <View className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 items-center">
+            <View className="bg-green-100 w-20 h-20 rounded-full items-center justify-center mb-4">
+              <Ionicons name="checkmark-circle" size={48} color="#10b981" />
+            </View>
+
+            <Text className="text-2xl font-bold text-gray-900 text-center mb-2">
+              Tudo em dia!
+            </Text>
+
+            <Text className="text-base text-gray-600 text-center leading-6">
+              Você não tem nenhum medicamento agendado para hoje.
+            </Text>
+
+            <View className="bg-green-50 rounded-2xl p-4 mt-6 w-full">
+              <Text className="text-green-800 text-center font-medium">
+                ✨ Continue cuidando da sua saúde!
+              </Text>
+            </View>
+          </View>
         </View>
       ) : (
         <FlatList
           data={todayReminders}
           renderItem={renderReminderItem}
-          keyExtractor={(item) =>
+          keyExtractor={(item: { id?: number }) =>
             item.id?.toString() || Math.random().toString()
           }
-          contentContainerStyle={{ paddingBottom: 16 }}
+          contentContainerStyle={{
+            paddingTop: 24,
+            paddingBottom: 120, // Espaço para tab bar flutuante
+          }}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         />
       )}
+      <Modal />
     </SafeAreaView>
   );
 }
