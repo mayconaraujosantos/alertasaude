@@ -32,6 +32,53 @@ export default function AddScheduleScreen() {
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Função para calcular o cronograma completo
+  const calculateSchedule = () => {
+    if (!intervalHours || !durationDays || !startTime) return null;
+
+    const interval = parseInt(intervalHours);
+    const duration = parseInt(durationDays);
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+
+    const dosesPerDay = Math.ceil(24 / interval);
+    const totalDoses = dosesPerDay * duration;
+    const schedule = [];
+
+    const startDate = new Date();
+    startDate.setHours(startHour, startMinute, 0, 0);
+
+    for (let i = 0; i < totalDoses; i++) {
+      const doseTime = new Date(
+        startDate.getTime() + i * interval * 60 * 60 * 1000
+      );
+      const day = Math.floor(i / dosesPerDay) + 1;
+      const doseNumber = (i % dosesPerDay) + 1;
+
+      if (day <= duration) {
+        schedule.push({
+          day,
+          doseNumber,
+          time: doseTime.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          date: doseTime.toLocaleDateString('pt-BR'),
+          fullDate: doseTime,
+        });
+      }
+    }
+
+    return {
+      schedule,
+      dosesPerDay,
+      totalDoses: schedule.length,
+      startDate: startDate.toLocaleDateString('pt-BR'),
+      endDate: schedule[schedule.length - 1]?.date || '',
+    };
+  };
+
+  const scheduleData = calculateSchedule();
+
   // Sistema de cores dinâmico baseado no tema
   const colors = {
     primary: '#ff6b35',
@@ -643,8 +690,8 @@ export default function AddScheduleScreen() {
           </View>
         </View>
 
-        {/* Preview Premium do Cronograma */}
-        {Boolean(intervalHours && durationDays) && (
+        {/* Cronograma Completo Dinâmico */}
+        {scheduleData && (
           <View
             className="rounded-3xl p-6 mb-6 shadow-xl border"
             style={{
@@ -657,134 +704,295 @@ export default function AddScheduleScreen() {
               elevation: 12,
             }}
           >
-            {/* Header do Preview */}
+            {/* Header do Cronograma */}
             <View className="flex-row items-center mb-6">
               <LinearGradient
                 colors={[colors.accent, '#059669']}
                 className="w-12 h-12 rounded-2xl items-center justify-center mr-4"
               >
-                <Ionicons name="checkmark-circle" size={24} color="white" />
+                <Ionicons name="calendar-number" size={24} color="white" />
               </LinearGradient>
               <View>
                 <Text
                   className="text-2xl font-bold"
                   style={{ color: colors.text }}
                 >
-                  Resumo
+                  Cronograma de Administração
                 </Text>
                 <Text
                   className="text-sm font-medium"
                   style={{ color: colors.accent }}
                 >
-                  Cronograma configurado
+                  {medicine.name} - {medicine.dosage}
                 </Text>
               </View>
             </View>
 
-            {/* Informações do cronograma */}
-            <View className="space-y-4">
+            {/* Informações Gerais */}
+            <View className="mb-6">
               <View
-                className="flex-row items-center p-4 rounded-2xl"
-                style={{ backgroundColor: colors.surfaceSecondary }}
-              >
-                <View
-                  className="w-10 h-10 rounded-xl items-center justify-center mr-4"
-                  style={{ backgroundColor: `${colors.primary}15` }}
-                >
-                  <Ionicons name="timer" size={20} color={colors.primary} />
-                </View>
-                <View>
-                  <Text
-                    className="text-sm font-medium"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Intervalo
-                  </Text>
-                  <Text
-                    className="text-lg font-bold"
-                    style={{ color: colors.text }}
-                  >
-                    De {intervalHours} em {intervalHours} horas
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                className="flex-row items-center p-4 rounded-2xl"
-                style={{ backgroundColor: colors.surfaceSecondary }}
-              >
-                <View
-                  className="w-10 h-10 rounded-xl items-center justify-center mr-4"
-                  style={{ backgroundColor: `${colors.secondary}15` }}
-                >
-                  <Ionicons
-                    name="calendar"
-                    size={20}
-                    color={colors.secondary}
-                  />
-                </View>
-                <View>
-                  <Text
-                    className="text-sm font-medium"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Duração
-                  </Text>
-                  <Text
-                    className="text-lg font-bold"
-                    style={{ color: colors.text }}
-                  >
-                    {durationDays} dias consecutivos
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                className="flex-row items-center p-4 rounded-2xl"
-                style={{ backgroundColor: colors.surfaceSecondary }}
-              >
-                <View
-                  className="w-10 h-10 rounded-xl items-center justify-center mr-4"
-                  style={{ backgroundColor: `${colors.warning}15` }}
-                >
-                  <Ionicons name="time" size={20} color={colors.warning} />
-                </View>
-                <View>
-                  <Text
-                    className="text-sm font-medium"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Início
-                  </Text>
-                  <Text
-                    className="text-lg font-bold"
-                    style={{ color: colors.text }}
-                  >
-                    Primeiro horário: {startTime}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Estatística destacada */}
-              <View
-                className="p-4 rounded-2xl border-2 border-dashed"
+                className="p-4 rounded-2xl border-l-4"
                 style={{
-                  backgroundColor: `${colors.accent}10`,
-                  borderColor: `${colors.accent}40`,
+                  backgroundColor: colors.surfaceSecondary,
+                  borderLeftColor: colors.primary,
                 }}
               >
-                <View className="flex-row items-center justify-center">
+                <Text
+                  className="text-base font-bold mb-2"
+                  style={{ color: colors.text }}
+                >
+                  📋 Informações do Tratamento
+                </Text>
+                <Text
+                  className="text-sm leading-6"
+                  style={{ color: colors.textSecondary }}
+                >
+                  <Text className="font-semibold">Posologia:</Text> Administrar{' '}
+                  {medicine.dosage} a cada {intervalHours} horas (
+                  {scheduleData.dosesPerDay === 1
+                    ? 'uma vez'
+                    : scheduleData.dosesPerDay === 2
+                      ? 'duas vezes'
+                      : `${scheduleData.dosesPerDay} vezes`}{' '}
+                  ao dia) por {durationDays} dias.
+                </Text>
+                <Text
+                  className="text-sm mt-2"
+                  style={{ color: colors.textSecondary }}
+                >
+                  <Text className="font-semibold">Período:</Text>{' '}
+                  {scheduleData.startDate} até {scheduleData.endDate}
+                </Text>
+                <Text
+                  className="text-sm mt-1"
+                  style={{ color: colors.textSecondary }}
+                >
+                  <Text className="font-semibold">Total de doses:</Text>{' '}
+                  {scheduleData.totalDoses} doses
+                </Text>
+              </View>
+            </View>
+
+            {/* Cronograma Diário Sugerido */}
+            <View className="mb-6">
+              <View className="flex-row items-center mb-4">
+                <View
+                  className="w-8 h-8 rounded-full items-center justify-center mr-3"
+                  style={{ backgroundColor: `${colors.warning}20` }}
+                >
+                  <Ionicons name="time" size={16} color={colors.warning} />
+                </View>
+                <Text
+                  className="text-lg font-bold"
+                  style={{ color: colors.text }}
+                >
+                  Horários Diários Sugeridos
+                </Text>
+              </View>
+
+              {Array.from({ length: scheduleData.dosesPerDay }, (_, index) => {
+                const doseTime = scheduleData.schedule.find(
+                  s => s.doseNumber === index + 1
+                )?.time;
+                return (
+                  <View
+                    key={index}
+                    className="flex-row items-center p-3 mb-2 rounded-xl"
+                    style={{ backgroundColor: colors.surfaceSecondary }}
+                  >
+                    <View
+                      className="w-8 h-8 rounded-full items-center justify-center mr-3"
+                      style={{ backgroundColor: colors.warning }}
+                    >
+                      <Text className="text-white text-sm font-bold">
+                        {index + 1}
+                      </Text>
+                    </View>
+                    <Text
+                      className="text-base font-semibold"
+                      style={{ color: colors.text }}
+                    >
+                      Dose {index + 1}: {doseTime}{' '}
+                      {index === 0 ? '(manhã)' : index === 1 ? '(noite)' : ''}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Cronograma Completo por Dias */}
+            <View className="mb-6">
+              <View className="flex-row items-center mb-4">
+                <View
+                  className="w-8 h-8 rounded-full items-center justify-center mr-3"
+                  style={{ backgroundColor: `${colors.secondary}20` }}
+                >
+                  <Ionicons name="list" size={16} color={colors.secondary} />
+                </View>
+                <Text
+                  className="text-lg font-bold"
+                  style={{ color: colors.text }}
+                >
+                  Cronograma Completo
+                </Text>
+              </View>
+
+              <ScrollView
+                className="max-h-64"
+                showsVerticalScrollIndicator={false}
+              >
+                {Array.from(
+                  { length: parseInt(durationDays) },
+                  (_, dayIndex) => {
+                    const dayNumber = dayIndex + 1;
+                    const dayDoses = scheduleData.schedule.filter(
+                      s => s.day === dayNumber
+                    );
+
+                    return (
+                      <View key={dayNumber} className="mb-4">
+                        <View
+                          className="p-3 rounded-t-xl"
+                          style={{ backgroundColor: `${colors.primary}15` }}
+                        >
+                          <Text
+                            className="text-sm font-bold"
+                            style={{ color: colors.primary }}
+                          >
+                            DIA {dayNumber} - {dayDoses[0]?.date}
+                          </Text>
+                        </View>
+                        <View
+                          className="p-3 rounded-b-xl border-l-2"
+                          style={{
+                            backgroundColor: colors.surfaceSecondary,
+                            borderLeftColor: colors.primary,
+                          }}
+                        >
+                          {dayDoses.map((dose, index) => (
+                            <View
+                              key={index}
+                              className="flex-row items-center mb-2 last:mb-0"
+                            >
+                              <View
+                                className="w-6 h-6 rounded-full items-center justify-center mr-3"
+                                style={{ backgroundColor: colors.accent }}
+                              >
+                                <Text className="text-white text-xs font-bold">
+                                  {dose.doseNumber}
+                                </Text>
+                              </View>
+                              <Text
+                                className="text-sm font-medium"
+                                style={{ color: colors.text }}
+                              >
+                                {dose.time} - Dose {dose.doseNumber}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    );
+                  }
+                )}
+              </ScrollView>
+            </View>
+
+            {/* Instruções Importantes */}
+            <View
+              className="p-4 rounded-2xl border"
+              style={{
+                backgroundColor: `${colors.warning}10`,
+                borderColor: `${colors.warning}40`,
+              }}
+            >
+              <View className="flex-row items-center mb-3">
+                <Ionicons name="warning" size={20} color={colors.warning} />
+                <Text
+                  className="text-base font-bold ml-2"
+                  style={{ color: colors.warning }}
+                >
+                  INSTRUÇÕES IMPORTANTES
+                </Text>
+              </View>
+              <View className="space-y-2">
+                <Text
+                  className="text-sm leading-5"
+                  style={{ color: colors.text }}
+                >
+                  • Para suspensões: Agite bem o frasco antes de cada uso
+                </Text>
+                <Text
+                  className="text-sm leading-5"
+                  style={{ color: colors.text }}
+                >
+                  • Utilize o copinho dosador ou seringa oral para medir com
+                  precisão
+                </Text>
+                <Text
+                  className="text-sm leading-5"
+                  style={{ color: colors.text }}
+                >
+                  • Pode ser administrado com alimentos para reduzir desconforto
+                </Text>
+                <Text
+                  className="text-sm leading-5"
+                  style={{ color: colors.text }}
+                >
+                  • Mantenha intervalos regulares entre as doses
+                </Text>
+              </View>
+            </View>
+
+            {/* Estatística Final */}
+            <View
+              className="mt-6 p-4 rounded-2xl border-2 border-dashed"
+              style={{
+                backgroundColor: `${colors.accent}10`,
+                borderColor: `${colors.accent}40`,
+              }}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="items-center">
                   <Text
-                    className="text-3xl font-bold mr-2"
+                    className="text-2xl font-bold"
                     style={{ color: colors.accent }}
                   >
-                    {Math.ceil(24 / parseInt(intervalHours || '8'))}
+                    {scheduleData.dosesPerDay}
                   </Text>
                   <Text
-                    className="text-lg font-semibold"
-                    style={{ color: colors.text }}
+                    className="text-xs font-medium"
+                    style={{ color: colors.textSecondary }}
                   >
-                    doses por dia
+                    doses/dia
+                  </Text>
+                </View>
+                <View className="items-center">
+                  <Text
+                    className="text-2xl font-bold"
+                    style={{ color: colors.secondary }}
+                  >
+                    {durationDays}
+                  </Text>
+                  <Text
+                    className="text-xs font-medium"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    dias
+                  </Text>
+                </View>
+                <View className="items-center">
+                  <Text
+                    className="text-2xl font-bold"
+                    style={{ color: colors.primary }}
+                  >
+                    {scheduleData.totalDoses}
+                  </Text>
+                  <Text
+                    className="text-xs font-medium"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    total
                   </Text>
                 </View>
               </View>
