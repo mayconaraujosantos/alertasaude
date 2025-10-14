@@ -1,9 +1,12 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
+import { NotificationService } from '../services/NotificationService';
 import { DoseReminder, Medicine, MedicineSchedule, Schedule } from '../types';
 
 class DatabaseManager {
   private db: SQLite.SQLiteDatabase | null = null;
   private initPromise: Promise<void> | null = null;
+  private dbPath: string = '';
 
   async initDatabase(): Promise<void> {
     if (this.initPromise) {
@@ -16,9 +19,16 @@ class DatabaseManager {
 
   private async _initDatabase(): Promise<void> {
     try {
+      // Abrir/criar o banco de dados (Expo SQLite gerencia o local automaticamente)
       this.db = await SQLite.openDatabaseAsync('medicineApp.db');
-      await this.createTables();
+
+      // O caminho do banco será no diretório padrão do SQLite
+      this.dbPath = `${FileSystem.documentDirectory}SQLite/medicineApp.db`;
+
       console.log('Database initialized successfully');
+      console.log('Database file location:', this.dbPath);
+
+      await this.createTables();
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;
@@ -72,11 +82,21 @@ class DatabaseManager {
         takenAt TEXT,
         isTaken INTEGER DEFAULT 0,
         isSkipped INTEGER DEFAULT 0,
+        notificationId TEXT,
+        earlyNotificationId TEXT,
         createdAt TEXT NOT NULL,
         FOREIGN KEY (scheduleId) REFERENCES medicine_schedules (id) ON DELETE CASCADE,
         FOREIGN KEY (medicineId) REFERENCES medicines (id) ON DELETE CASCADE
       );
     `);
+
+    // Verificar e adicionar colunas se não existirem
+    await this.addColumnIfNotExists('dose_reminders', 'notificationId', 'TEXT');
+    await this.addColumnIfNotExists(
+      'dose_reminders',
+      'earlyNotificationId',
+      'TEXT'
+    );
 
     // Tabela de agendamentos simples (nova estrutura)
     await this.db.execAsync(`
@@ -105,6 +125,40 @@ class DatabaseManager {
         FOREIGN KEY (medicineId) REFERENCES medicines (id) ON DELETE CASCADE
       );
     `);
+  }
+
+  // Método auxiliar para adicionar coluna se não existir
+  private async addColumnIfNotExists(
+    tableName: string,
+    columnName: string,
+    columnType: string
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Verificar se a coluna já existe
+      const tableInfo = await this.db.getAllAsync(
+        `PRAGMA table_info(${tableName})`
+      );
+      const columnExists = tableInfo.some(
+        (column: any) => column.name === columnName
+      );
+
+      if (!columnExists) {
+        await this.db.execAsync(
+          `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType};`
+        );
+        console.log(`✅ Added column ${columnName} to ${tableName}`);
+      } else {
+        console.log(`ℹ️ Column ${columnName} already exists in ${tableName}`);
+      }
+    } catch (error: any) {
+      console.error(
+        `❌ Error checking/adding column ${columnName}:`,
+        error.message
+      );
+      // Não relançar o erro, pois pode ser que a coluna já existe
+    }
   }
 
   // CRUD para Medicamentos
@@ -162,11 +216,11 @@ class DatabaseManager {
   async updateMedicine(id: number, medicine: Partial<Medicine>): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const fields = Object.keys(medicine).filter((key) => key !== 'id');
+    const fields = Object.keys(medicine).filter(key => key !== 'id');
     const values = fields
-      .map((field) => medicine[field as keyof Medicine])
-      .filter((v) => v !== undefined);
-    const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      .map(field => medicine[field as keyof Medicine])
+      .filter(v => v !== undefined);
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
 
     await this.db.runAsync(
       `UPDATE medicines SET ${setClause} WHERE id = ?`,
@@ -226,15 +280,22 @@ class DatabaseManager {
       throw new Error(`Invalid startTime format: ${schedule.startTime}`);
     }
 
+    // Buscar informações do medicamento para as notificações
+    const medicine = await this.getMedicineById(schedule.medicineId);
+    if (!medicine) {
+      throw new Error('Medicine not found');
+    }
+
     const reminders: any[] = [];
 
-    console.log('Generating reminders for schedule:', {
+    console.log('🔔 Generating reminders with notifications for schedule:', {
       scheduleId,
       intervalHours: schedule.intervalHours,
       durationDays: schedule.durationDays,
       startTime: schedule.startTime,
       startDateTime: startDateTime.toISOString(),
-      isValidDate: !isNaN(startDateTime.getTime()),
+      medicineName: medicine.name,
+      dosage: medicine.dosage,
     });
 
     // Para cada dia do tratamento
@@ -262,6 +323,8 @@ class DatabaseManager {
           medicineId: schedule.medicineId,
           scheduledTime: currentTime.toISOString(),
           createdAt: new Date().toISOString(),
+          notificationId: null,
+          earlyNotificationId: null,
         };
 
         reminders.push(reminder);
@@ -275,23 +338,68 @@ class DatabaseManager {
       }
     }
 
-    // Inserir todos os lembretes no banco
+    // Inserir todos os lembretes no banco e agendar notificações
     for (const reminder of reminders) {
       try {
-        await this.db.runAsync(
-          'INSERT INTO dose_reminders (scheduleId, medicineId, scheduledTime, isTaken, isSkipped, createdAt) VALUES (?, ?, ?, 0, 0, ?)',
+        // Inserir o lembrete no banco
+        const result = await this.db.runAsync(
+          'INSERT INTO dose_reminders (scheduleId, medicineId, scheduledTime, isTaken, isSkipped, createdAt, notificationId, earlyNotificationId) VALUES (?, ?, ?, 0, 0, ?, ?, ?)',
           reminder.scheduleId,
           reminder.medicineId,
           reminder.scheduledTime,
-          reminder.createdAt
+          reminder.createdAt,
+          null, // notificationId será atualizado depois
+          null // earlyNotificationId será atualizado depois
         );
-        console.log('Inserted reminder:', reminder.scheduledTime);
+
+        const reminderId = result.lastInsertRowId;
+
+        // Agendar notificação principal
+        const notificationId =
+          await NotificationService.scheduleMedicationReminder({
+            id: reminderId,
+            medicineName: medicine.name,
+            dosage: medicine.dosage,
+            scheduledTime: reminder.scheduledTime,
+          });
+
+        // Agendar notificação antecipada (15 minutos antes)
+        const earlyNotificationId =
+          await NotificationService.scheduleEarlyReminder({
+            id: reminderId,
+            medicineName: medicine.name,
+            dosage: medicine.dosage,
+            scheduledTime: reminder.scheduledTime,
+          });
+
+        // Atualizar o lembrete com os IDs das notificações
+        if (notificationId || earlyNotificationId) {
+          await this.db.runAsync(
+            'UPDATE dose_reminders SET notificationId = ?, earlyNotificationId = ? WHERE id = ?',
+            notificationId,
+            earlyNotificationId,
+            reminderId
+          );
+        }
+
+        console.log('✅ Inserted reminder with notifications:', {
+          reminderId,
+          scheduledTime: reminder.scheduledTime,
+          notificationId,
+          earlyNotificationId,
+        });
       } catch (error) {
-        console.error('Error inserting reminder:', error, reminder);
+        console.error(
+          '❌ Error inserting reminder with notifications:',
+          error,
+          reminder
+        );
       }
     }
 
-    console.log(`Generated and inserted ${reminders.length} dose reminders`);
+    console.log(
+      `🎯 Generated and inserted ${reminders.length} dose reminders with notifications`
+    );
   }
 
   async getSchedulesByMedicineId(medicineId: number): Promise<Schedule[]> {
@@ -302,7 +410,7 @@ class DatabaseManager {
       medicineId
     );
 
-    return result.map((row) => ({
+    return result.map(row => ({
       ...(row as any),
       isActive: Boolean((row as any).isActive),
     })) as Schedule[];
@@ -339,7 +447,7 @@ class DatabaseManager {
       medicineId
     );
 
-    return result.map((row) => ({
+    return result.map(row => ({
       ...(row as any),
       isActive: Boolean((row as any).isActive),
     })) as MedicineSchedule[];
@@ -352,7 +460,7 @@ class DatabaseManager {
       'SELECT * FROM medicine_schedules WHERE isActive = 1 ORDER BY createdAt DESC'
     );
 
-    return result.map((row) => ({
+    return result.map(row => ({
       ...(row as any),
       isActive: Boolean((row as any).isActive),
     })) as MedicineSchedule[];
@@ -376,6 +484,24 @@ class DatabaseManager {
     );
 
     return result.lastInsertRowId;
+  }
+
+  async getAllDoseReminders(): Promise<DoseReminder[]> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync(
+      `SELECT dr.*, m.name as medicineName, m.dosage
+       FROM dose_reminders dr
+       JOIN medicines m ON dr.medicineId = m.id
+       ORDER BY dr.scheduledTime DESC`
+    );
+
+    return result.map(row => ({
+      ...(row as any),
+      isTaken: Boolean((row as any).isTaken),
+      isSkipped: Boolean((row as any).isSkipped),
+    })) as DoseReminder[];
   }
 
   async getTodayReminders(): Promise<DoseReminder[]> {
@@ -403,7 +529,7 @@ class DatabaseManager {
     console.log('Found reminders for today:', result.length);
     console.log('Reminders data:', result);
 
-    return result.map((row) => ({
+    return result.map(row => ({
       ...(row as any),
       isTaken: Boolean((row as any).isTaken),
       isSkipped: Boolean((row as any).isSkipped),
@@ -529,6 +655,310 @@ class DatabaseManager {
       console.log('Test reminders created successfully');
     } catch (error) {
       console.error('Error creating test reminders:', error);
+    }
+  }
+
+  // Método para marcar lembrete como tomado e cancelar notificações
+  async markReminderAsTaken(reminderId: number): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Buscar o lembrete com os IDs das notificações
+      const reminder = (await this.db.getFirstAsync(
+        'SELECT * FROM dose_reminders WHERE id = ?',
+        reminderId
+      )) as any;
+
+      if (!reminder) {
+        throw new Error('Reminder not found');
+      }
+
+      // Cancelar notificações se existirem
+      if (reminder.notificationId) {
+        await NotificationService.cancelNotification(reminder.notificationId);
+        console.log('🔕 Cancelled main notification:', reminder.notificationId);
+      }
+
+      if (reminder.earlyNotificationId) {
+        await NotificationService.cancelNotification(
+          reminder.earlyNotificationId
+        );
+        console.log(
+          '🔕 Cancelled early notification:',
+          reminder.earlyNotificationId
+        );
+      }
+
+      // Marcar como tomado
+      await this.db.runAsync(
+        'UPDATE dose_reminders SET isTaken = 1, takenAt = ? WHERE id = ?',
+        new Date().toISOString(),
+        reminderId
+      );
+
+      console.log(
+        '✅ Marked reminder as taken and cancelled notifications:',
+        reminderId
+      );
+    } catch (error) {
+      console.error('❌ Error marking reminder as taken:', error);
+      throw error;
+    }
+  }
+
+  // Método para pular lembrete e cancelar notificações
+  async skipReminder(reminderId: number): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Buscar o lembrete com os IDs das notificações
+      const reminder = (await this.db.getFirstAsync(
+        'SELECT * FROM dose_reminders WHERE id = ?',
+        reminderId
+      )) as any;
+
+      if (!reminder) {
+        throw new Error('Reminder not found');
+      }
+
+      // Cancelar notificações se existirem
+      if (reminder.notificationId) {
+        await NotificationService.cancelNotification(reminder.notificationId);
+        console.log('🔕 Cancelled main notification:', reminder.notificationId);
+      }
+
+      if (reminder.earlyNotificationId) {
+        await NotificationService.cancelNotification(
+          reminder.earlyNotificationId
+        );
+        console.log(
+          '🔕 Cancelled early notification:',
+          reminder.earlyNotificationId
+        );
+      }
+
+      // Marcar como pulado
+      await this.db.runAsync(
+        'UPDATE dose_reminders SET isSkipped = 1 WHERE id = ?',
+        reminderId
+      );
+
+      console.log(
+        '⏭️ Skipped reminder and cancelled notifications:',
+        reminderId
+      );
+    } catch (error) {
+      console.error('❌ Error skipping reminder:', error);
+      throw error;
+    }
+  }
+
+  // Método para cancelar todas as notificações de um agendamento
+  async cancelScheduleNotifications(scheduleId: number): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Buscar todos os lembretes do agendamento
+      const reminders = await this.db.getAllAsync(
+        'SELECT * FROM dose_reminders WHERE scheduleId = ? AND isTaken = 0 AND isSkipped = 0',
+        scheduleId
+      );
+
+      console.log(
+        `🔕 Cancelling notifications for ${reminders.length} reminders`
+      );
+
+      for (const reminder of reminders) {
+        const rem = reminder as any;
+        if (rem.notificationId) {
+          await NotificationService.cancelNotification(rem.notificationId);
+        }
+        if (rem.earlyNotificationId) {
+          await NotificationService.cancelNotification(rem.earlyNotificationId);
+        }
+      }
+
+      console.log('✅ Cancelled all notifications for schedule:', scheduleId);
+    } catch (error) {
+      console.error('❌ Error cancelling schedule notifications:', error);
+      throw error;
+    }
+  }
+
+  // Métodos para administração do banco
+  async getAllSchedules(): Promise<Schedule[]> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync(
+      'SELECT * FROM schedules ORDER BY createdAt DESC'
+    );
+    return result as Schedule[];
+  }
+
+  async clearAllData(): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Cancelar todas as notificações primeiro
+      await NotificationService.cancelAllNotifications();
+
+      // Limpar todas as tabelas
+      await this.db.execAsync('DELETE FROM dose_reminders');
+      await this.db.execAsync('DELETE FROM medicine_schedules');
+      await this.db.execAsync('DELETE FROM schedules');
+      await this.db.execAsync('DELETE FROM medicines');
+      await this.db.execAsync('DELETE FROM notification_configs');
+
+      console.log('🗑️ All data cleared from database');
+    } catch (error) {
+      console.error('❌ Error clearing all data:', error);
+      throw error;
+    }
+  }
+
+  async importData(data: {
+    medicines: Medicine[];
+    schedules: Schedule[];
+    doseReminders: DoseReminder[];
+  }): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Limpar dados existentes
+      await this.clearAllData();
+
+      console.log('📥 Starting data import...');
+
+      // Importar medicamentos
+      for (const medicine of data.medicines) {
+        const { id: _id, ...medicineData } = medicine;
+        await this.insertMedicine(medicineData);
+      }
+
+      // Importar agendamentos
+      for (const schedule of data.schedules) {
+        const { id: _id, ...scheduleData } = schedule;
+        await this.addSchedule(scheduleData);
+      }
+
+      console.log('✅ Data import completed successfully');
+    } catch (error) {
+      console.error('❌ Error importing data:', error);
+      throw error;
+    }
+  }
+
+  async exportAllData(): Promise<{
+    medicines: Medicine[];
+    schedules: Schedule[];
+    doseReminders: DoseReminder[];
+  }> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      console.log('📤 Exporting all data from database...');
+
+      const medicines = await this.getAllMedicines();
+      const schedules = await this.getAllSchedules();
+      const doseReminders = await this.getAllDoseReminders();
+
+      const exportData = {
+        medicines,
+        schedules,
+        doseReminders,
+      };
+
+      console.log('✅ Data export completed');
+      return exportData;
+    } catch (error) {
+      console.error('❌ Error exporting data:', error);
+      throw error;
+    }
+  }
+
+  // Métodos úteis para debug e visualização
+  getDatabasePath(): string {
+    return this.dbPath;
+  }
+
+  async getTableInfo(): Promise<any> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      console.log('📊 Database Information:');
+      console.log('Path:', this.dbPath);
+
+      // Listar todas as tabelas
+      const tables = await this.db.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+      );
+
+      console.log(
+        'Tables:',
+        tables.map(t => (t as any).name)
+      );
+
+      // Contar registros em cada tabela
+      for (const table of tables) {
+        const tableName = (table as any).name;
+        const count = await this.db.getFirstAsync(
+          `SELECT COUNT(*) as count FROM ${tableName}`
+        );
+        console.log(`${tableName}: ${(count as any)?.count || 0} records`);
+      }
+
+      return {
+        path: this.dbPath,
+        tables: tables.map(t => (t as any).name),
+      };
+    } catch (error) {
+      console.error('❌ Error getting table info:', error);
+      throw error;
+    }
+  }
+
+  async copyDatabaseToDownloads(): Promise<string | null> {
+    try {
+      if (!this.dbPath) {
+        console.log('❌ Database path not available');
+        return null;
+      }
+
+      // Verificar se o arquivo existe
+      const fileInfo = await FileSystem.getInfoAsync(this.dbPath);
+      if (!fileInfo.exists) {
+        console.log('❌ Database file does not exist at:', this.dbPath);
+        console.log('💡 Trying alternative SQLite location...');
+
+        // Tentar localização alternativa comum do SQLite
+        const altPath = `${FileSystem.documentDirectory}SQLite/medicineApp.db`;
+        const altFileInfo = await FileSystem.getInfoAsync(altPath);
+
+        if (altFileInfo.exists) {
+          this.dbPath = altPath;
+          console.log('✅ Found database at alternative location:', altPath);
+        } else {
+          console.log('❌ Database file not found in any location');
+          return null;
+        }
+      }
+
+      // Para desenvolvimento, apenas retornar o caminho
+      console.log('📁 Database file location:', this.dbPath);
+      console.log('💡 You can access this file for debugging');
+
+      return this.dbPath;
+    } catch (error) {
+      console.error('❌ Error accessing database file:', error);
+      return null;
     }
   }
 }

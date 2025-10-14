@@ -1,3 +1,11 @@
+export interface User {
+  id?: number;
+  name: string;
+  email?: string;
+  avatarUri?: string;
+  createdAt: string;
+}
+
 export interface Medicine {
   id?: number;
   name: string;
