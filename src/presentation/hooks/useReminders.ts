@@ -84,16 +84,32 @@ export function useReminders(
 
   const markAsTaken = useCallback(
     async (reminderId: number) => {
+      console.log('🔵 [useReminders] markAsTaken iniciado, ID:', reminderId);
       try {
+        console.log('🔵 [useReminders] Buscando lembrete...');
         const reminder = await doseReminderRepository.findById(reminderId);
         if (!reminder) {
           throw new Error('Lembrete não encontrado');
         }
+        console.log('🔵 [useReminders] Lembrete encontrado:', reminder.id);
 
+        console.log('🔵 [useReminders] Marcando como tomado...');
         const updatedReminder = reminder.markAsTaken();
+        console.log('🔵 [useReminders] Estado após marcar:', {
+          isTaken: updatedReminder.isTaken,
+          isSkipped: updatedReminder.isSkipped,
+          takenAt: updatedReminder.takenAt,
+        });
+
+        console.log('🔵 [useReminders] Atualizando no repositório...');
         await doseReminderRepository.update(updatedReminder);
+        console.log('✅ [useReminders] Atualizado no repositório');
+
+        console.log('🔵 [useReminders] Recarregando lembretes...');
         await loadTodayReminders();
+        console.log('✅ [useReminders] markAsTaken concluído');
       } catch (err) {
+        console.error('🔴 [useReminders] Erro em markAsTaken:', err);
         setError(
           err instanceof Error ? err.message : 'Erro ao marcar como tomado',
         );
@@ -104,16 +120,31 @@ export function useReminders(
 
   const markAsSkipped = useCallback(
     async (reminderId: number) => {
+      console.log('🟡 [useReminders] markAsSkipped iniciado, ID:', reminderId);
       try {
+        console.log('🟡 [useReminders] Buscando lembrete...');
         const reminder = await doseReminderRepository.findById(reminderId);
         if (!reminder) {
           throw new Error('Lembrete não encontrado');
         }
+        console.log('🟡 [useReminders] Lembrete encontrado:', reminder.id);
 
+        console.log('🟡 [useReminders] Marcando como pulado...');
         const updatedReminder = reminder.markAsSkipped();
+        console.log('🟡 [useReminders] Estado após marcar:', {
+          isTaken: updatedReminder.isTaken,
+          isSkipped: updatedReminder.isSkipped,
+        });
+
+        console.log('🟡 [useReminders] Atualizando no repositório...');
         await doseReminderRepository.update(updatedReminder);
+        console.log('✅ [useReminders] Atualizado no repositório');
+
+        console.log('🟡 [useReminders] Recarregando lembretes...');
         await loadTodayReminders();
+        console.log('✅ [useReminders] markAsSkipped concluído');
       } catch (err) {
+        console.error('🔴 [useReminders] Erro em markAsSkipped:', err);
         setError(
           err instanceof Error ? err.message : 'Erro ao marcar como pulado',
         );
