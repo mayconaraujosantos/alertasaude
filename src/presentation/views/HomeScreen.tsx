@@ -15,12 +15,12 @@ import { DoseReminderEntity } from '../../domain/entities';
 import UserHeader from '../components/UserHeader';
 
 function HomeScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<{ navigate: (screen: string) => void }>();
   const { colors, styles } = useSystemTheme();
 
-  // Dependency Injection
+  // Dependency Injection - USANDO DRIZZLE ORM
   const diContainer = DIContainer.getInstance();
-  const doseReminderRepository = diContainer.doseReminderRepository;
+  const doseReminderRepository = diContainer.drizzleDoseReminderRepository;
 
   // Using the new hook with clean architecture
   const {
@@ -52,7 +52,7 @@ function HomeScreen() {
         );
         console.log(
           '🔍 [HomeScreen] Tabelas no banco:',
-          tables.map(t => (t as any).name),
+          tables.map(t => (t as { name: string }).name),
         );
 
         // Tentar buscar dados apenas se as tabelas existirem
@@ -104,7 +104,7 @@ function HomeScreen() {
       if (!medicine) {
         console.log('🧪 [HomeScreen] Criando medicamento de teste...');
         await db.runAsync(
-          `INSERT INTO medicines (name, description, dosage, quantidade, unidade, forma, created_at) 
+          `INSERT INTO medicines (name, description, dosage, quantidade, unidade, forma, createdAt) 
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             'Paracetamol 500mg',
@@ -175,7 +175,7 @@ function HomeScreen() {
         );
 
         await db.runAsync(
-          `INSERT INTO dose_reminders (scheduleId, medicineId, reminderTime, taken, createdAt) 
+          `INSERT INTO dose_reminders (scheduleId, medicineId, scheduledTime, taken, createdAt) 
            VALUES (?, ?, ?, ?, ?)`,
           [
             (schedule as { id: number }).id,
@@ -198,14 +198,30 @@ function HomeScreen() {
     useCallback(() => {
       console.log('👁️ [HomeScreen] Screen focused, reloading reminders...');
 
-      // Debug do banco primeiro
-      debugDatabase().then(() => {
-        // Inserir dados de teste
-        insertTestData().then(() => {
-          // Depois carregar os lembretes
-          loadTodayReminders();
-        });
-      });
+      const initializeAndLoadData = async () => {
+        try {
+          // 1. Inicializar o Drizzle Database primeiro
+          console.log('🔵 [HomeScreen] Inicializando Drizzle Database...');
+          const drizzleDbManager =
+            DIContainer.getInstance().drizzleDatabaseManager;
+          await drizzleDbManager.initDatabase();
+          console.log('🟢 [HomeScreen] Drizzle Database inicializado!');
+
+          // 2. Debug do banco (usando o antigo ainda)
+          await debugDatabase();
+
+          // 3. Inserir dados de teste (usando o antigo ainda)
+          await insertTestData();
+
+          // 4. Carregar lembretes usando Drizzle
+          console.log('🔵 [HomeScreen] Carregando lembretes com Drizzle...');
+          await loadTodayReminders();
+        } catch (error) {
+          console.error('🔴 [HomeScreen] Erro na inicialização:', error);
+        }
+      };
+
+      initializeAndLoadData();
     }, [loadTodayReminders, insertTestData]),
   );
 

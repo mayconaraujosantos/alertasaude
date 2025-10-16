@@ -12,7 +12,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "type-check": "tsc --noEmit",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:push": "drizzle-kit push",
+    "db:drop": "drizzle-kit drop"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -21,6 +26,8 @@
     "@react-navigation/native": "^7.1.18",
     "@react-navigation/stack": "^7.4.10",
     "babel-preset-expo": "^54.0.3",
+    "drizzle-kit": "^0.31.5",
+    "drizzle-orm": "^0.44.6",
     "expo": "54.0.13",
     "expo-camera": "~17.0.8",
     "expo-dev-client": "~6.0.15",

@@ -1,8 +1,10 @@
 // Dependency Injection Container
 import { DatabaseManager } from '../../infrastructure/database/DatabaseManager';
+import { DrizzleDatabaseManager } from '../../infrastructure/database/DrizzleDatabaseManager';
 import { SQLiteMedicineRepository } from '../../data/repositories/SQLiteMedicineRepository';
 import { SQLiteScheduleRepository } from '../../data/repositories/SQLiteScheduleRepository';
 import { SQLiteDoseReminderRepository } from '../../data/repositories/SQLiteDoseReminderRepository';
+import { DrizzleDoseReminderRepository } from '../../data/repositories/DrizzleDoseReminderRepository';
 import { SQLiteUserRepository } from '../../data/repositories/SQLiteUserRepository';
 import {
   CreateMedicineUseCase,
@@ -27,6 +29,7 @@ export class DIContainer {
   private _medicineRepository?: SQLiteMedicineRepository;
   private _scheduleRepository?: SQLiteScheduleRepository;
   private _doseReminderRepository?: SQLiteDoseReminderRepository;
+  private _drizzleDoseReminderRepository?: DrizzleDoseReminderRepository;
   private _userRepository?: SQLiteUserRepository;
 
   // Use Cases
@@ -58,6 +61,10 @@ export class DIContainer {
     return DatabaseManager.getInstance();
   }
 
+  get drizzleDatabaseManager(): DrizzleDatabaseManager {
+    return DrizzleDatabaseManager.getInstance();
+  }
+
   // Repository getters
   get medicineRepository(): SQLiteMedicineRepository {
     if (!this._medicineRepository) {
@@ -84,6 +91,15 @@ export class DIContainer {
       );
     }
     return this._doseReminderRepository;
+  }
+
+  get drizzleDoseReminderRepository(): DrizzleDoseReminderRepository {
+    if (!this._drizzleDoseReminderRepository) {
+      this._drizzleDoseReminderRepository = new DrizzleDoseReminderRepository(
+        DrizzleDatabaseManager.getInstance(),
+      );
+    }
+    return this._drizzleDoseReminderRepository;
   }
 
   get userRepository(): SQLiteUserRepository {
