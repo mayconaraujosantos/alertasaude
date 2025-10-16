@@ -1,0 +1,225 @@
+import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
+
+export class DatabaseManager {
+  private static instance: DatabaseManager;
+  private db: SQLite.SQLiteDatabase | null = null;
+  private initPromise: Promise<void> | null = null;
+  private dbPath: string = '';
+
+  private constructor() {}
+
+  static getInstance(): DatabaseManager {
+    if (!DatabaseManager.instance) {
+      DatabaseManager.instance = new DatabaseManager();
+    }
+    return DatabaseManager.instance;
+  }
+
+  async initDatabase(): Promise<void> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initPromise = this._initDatabase();
+    return this.initPromise;
+  }
+
+  private async _initDatabase(): Promise<void> {
+    try {
+      this.db = await SQLite.openDatabaseAsync('medicineApp.db');
+      this.dbPath = `${FileSystem.documentDirectory}SQLite/medicineApp.db`;
+
+      console.log('Database initialized successfully');
+      console.log('Database file location:', this.dbPath);
+
+      await this.createTables();
+    } catch (error) {
+      console.error('Error initializing database:', error);
+      throw error;
+    }
+  }
+
+  async getDatabase(): Promise<SQLite.SQLiteDatabase> {
+    await this.ensureInitialized();
+    if (!this.db) {
+      throw new Error('Database not available');
+    }
+    return this.db;
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (!this.db) {
+      await this.initDatabase();
+    }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Tabela de medicamentos
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS medicines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        dosage TEXT NOT NULL,
+        imageUri TEXT,
+        createdAt TEXT NOT NULL
+      );
+    `);
+
+    // Tabela de agendamentos
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        medicineId INTEGER NOT NULL,
+        intervalHours INTEGER NOT NULL,
+        durationDays INTEGER NOT NULL,
+        startTime TEXT NOT NULL,
+        notes TEXT,
+        isActive INTEGER DEFAULT 1,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (medicineId) REFERENCES medicines (id) ON DELETE CASCADE
+      );
+    `);
+
+    // Tabela de lembretes de dose
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS dose_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scheduleId INTEGER NOT NULL,
+        medicineId INTEGER NOT NULL,
+        scheduledTime TEXT NOT NULL,
+        takenAt TEXT,
+        isTaken INTEGER DEFAULT 0,
+        isSkipped INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (scheduleId) REFERENCES schedules (id) ON DELETE CASCADE,
+        FOREIGN KEY (medicineId) REFERENCES medicines (id) ON DELETE CASCADE
+      );
+    `);
+
+    // Tabela de usuários
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT,
+        avatarUri TEXT,
+        createdAt TEXT NOT NULL
+      );
+    `);
+  }
+
+  async dropAllTables(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.execAsync(`DROP TABLE IF EXISTS dose_reminders;`);
+    await this.db.execAsync(`DROP TABLE IF EXISTS schedules;`);
+    await this.db.execAsync(`DROP TABLE IF EXISTS medicines;`);
+    await this.db.execAsync(`DROP TABLE IF EXISTS users;`);
+  }
+
+  async resetDatabase(): Promise<void> {
+    await this.dropAllTables();
+    await this.createTables();
+  }
+
+  // Debug and Info Methods
+  async getTableInfo(): Promise<{
+    path: string;
+    tables: string[];
+    size?: number;
+    version?: string;
+  }> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const tables = await this.db.getAllAsync(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';`
+      ) as Array<{ name: string }>;
+
+      return {
+        path: this.dbPath,
+        tables: tables.map(t => t.name),
+        version: '1.0',
+      };
+    } catch (error) {
+      console.error('Error getting table info:', error);
+      throw error;
+    }
+  }
+
+  async getUserCount(): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      'SELECT COUNT(*) as count FROM users'
+    ) as { count: number };
+    return result.count;
+  }
+
+  async getMedicineCount(): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      'SELECT COUNT(*) as count FROM medicines'
+    ) as { count: number };
+    return result.count;
+  }
+
+  async getScheduleCount(): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      'SELECT COUNT(*) as count FROM schedules'
+    ) as { count: number };
+    return result.count;
+  }
+
+  async getDoseReminderCount(): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      'SELECT COUNT(*) as count FROM dose_reminders'
+    ) as { count: number };
+    return result.count;
+  }
+
+  async exportAllData(): Promise<{
+    users: any[];
+    medicines: any[];
+    schedules: any[];
+    doseReminders: any[];
+  }> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const users = await this.db.getAllAsync('SELECT * FROM users');
+      const medicines = await this.db.getAllAsync('SELECT * FROM medicines');
+      const schedules = await this.db.getAllAsync('SELECT * FROM schedules');
+      const doseReminders = await this.db.getAllAsync('SELECT * FROM dose_reminders');
+
+      return {
+        users,
+        medicines,
+        schedules,
+        doseReminders,
+      };
+    } catch (error) {
+      console.error('Error exporting all data:', error);
+      throw error;
+    }
+  }
+
+  getDatabasePath(): string {
+    return this.dbPath;
+  }
+}

@@ -3,30 +3,33 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import React, { useEffect } from 'react';
-import { LogBox, StatusBar } from 'react-native';
+import { LogBox } from 'react-native';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { databaseManager } from './src/database/DatabaseManager';
-import { NotificationService } from './src/services/NotificationService';
+import { DatabaseManager } from './src/infrastructure/database/DatabaseManager';
+import { NotificationService } from './src/infrastructure/services/NotificationService';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 
 // Screens
-import AddMedicineScreen from './src/screens/AddMedicineScreen';
-import AddScheduleScreen from './src/screens/AddScheduleScreen';
-import AdminScreen from './src/screens/AdminScreen';
-import EditMedicineScreen from './src/screens/EditMedicineScreen';
-import HistoryScreen from './src/screens/HistoryScreen';
-import HomeScreen from './src/screens/HomeScreen';
-import MedicinesScreen from './src/screens/MedicinesScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
+// New MVVM Architecture Views
+import AddMedicineScreen from './src/presentation/views/AddMedicineScreen';
+import AddScheduleScreen from './src/presentation/views/AddScheduleScreen';
+import AdminScreen from './src/presentation/views/AdminScreen';
+import EditMedicineScreen from './src/presentation/views/EditMedicineScreen';
+import HistoryScreen from './src/presentation/views/HistoryScreen';
+import HomeScreen from './src/presentation/views/HomeScreen';
+import MedicinesScreen from './src/presentation/views/MedicinesScreen';
+import ProfileScreen from './src/presentation/views/ProfileScreen';
+import SettingsScreen from './src/presentation/views/SettingsScreen';
 
 import './global.css';
 
 // Configuração oficial do Expo para suprimir warnings conhecidos
 if (__DEV__) {
   LogBox.ignoreLogs([
+    'SafeAreaView has been deprecated and will be removed in a future release',
     'SafeAreaView has been deprecated', // Warning do React Navigation/Expo
     'Require cycle:', // Warnings de ciclos de require
     'VirtualizedLists should never be nested', // Warning comum do FlatList
@@ -37,8 +40,9 @@ const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 // Inicializar o banco de dados
-const _initializeApp = async () => {
+const initializeApp = async () => {
   try {
+    const databaseManager = DatabaseManager.getInstance();
     await databaseManager.initDatabase();
     console.log('App initialized successfully');
 
@@ -46,15 +50,6 @@ const _initializeApp = async () => {
     const dbPath = databaseManager.getDatabasePath();
     console.log('=== DATABASE DEBUG INFO ===');
     console.log('Database Path:', dbPath);
-
-    // Mostrar informações das tabelas
-    setTimeout(async () => {
-      try {
-        await databaseManager.getTableInfo();
-      } catch (error) {
-        console.error('Error getting table info:', error);
-      }
-    }, 1000);
   } catch (error) {
     console.error('Error initializing app:', error);
   }
@@ -93,11 +88,11 @@ function MedicinesStack() {
 }
 
 // Componentes de ícones
-const HomeIcon = ({ color }: { color: string; size?: number }) => (
+const HomeIcon = ({ color }: { color: string; size: number }) => (
   <Ionicons name="home" size={22} color={color} />
 );
 
-const MedicineIcon = ({ color }: { color: string; size?: number }) => (
+const MedicineIcon = ({ color }: { color: string; size: number }) => (
   <Ionicons name="medical" size={22} color={color} />
 );
 
@@ -195,39 +190,29 @@ function MainStack() {
 
 export default function App() {
   useEffect(() => {
-    // Inicializar banco de dados e notificações
-    const initApp = async () => {
+    // Inicializar serviços quando o app inicia
+    (async () => {
       try {
+        // Configurar notificações
+        await NotificationService.setupNotifications();
+
         // Inicializar banco de dados
-        await databaseManager.initDatabase();
-        console.log('Database initialized successfully');
+        await initializeApp();
 
-        // Configurar sistema de notificações
-        const notificationsEnabled =
-          await NotificationService.setupNotifications();
-        if (notificationsEnabled) {
-          console.log('✅ Notification system initialized successfully');
-        } else {
-          console.log('⚠️ Notifications not enabled - user denied permission');
-        }
+        console.log('🚀 [App] All services initialized successfully');
       } catch (error) {
-        console.error('Failed to initialize app:', error);
+        console.error('❌ [App] Error initializing services:', error);
       }
-    };
-
-    initApp();
+    })();
   }, []);
 
   return (
     <SafeAreaProvider>
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="transparent"
-        translucent
-      />
-      <NavigationContainer>
-        <MainStack />
-      </NavigationContainer>
+      <ThemeProvider>
+        <NavigationContainer>
+          <MainStack />
+        </NavigationContainer>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
