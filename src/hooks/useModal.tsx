@@ -1,5 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import CustomModal, { ModalButton } from '../components/CustomModal';
+import CustomModal, {
+  ModalButton,
+} from '../presentation/components/CustomModal';
+
+// import CustomModal, { ModalButton } from '../components/CustomModal';
 
 interface ModalConfig {
   title: string;
