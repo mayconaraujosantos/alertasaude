@@ -3,33 +3,43 @@
 ## Comandos Disponíveis
 
 ### 1. Gerar nova migração
+
 ```bash
 npm run db:generate
 ```
+
 Este comando analisa o schema e gera uma nova migração SQL caso haja mudanças.
 
 ### 2. Aplicar migrações
-```bash  
+
+```bash
 npm run db:migrate
 ```
+
 Aplica todas as migrações pendentes no banco de dados.
 
 ### 3. Visualizar banco no Drizzle Studio
+
 ```bash
 npm run db:studio
 ```
+
 Abre uma interface web para visualizar e editar dados do banco.
 
 ### 4. Push schema diretamente (desenvolvimento)
+
 ```bash
 npm run db:push
 ```
+
 Aplica mudanças do schema diretamente sem criar migrações (útil em desenvolvimento).
 
 ### 5. Remover migração
+
 ```bash
 npm run db:drop
 ```
+
 Remove a última migração gerada.
 
 ## Fluxo de Desenvolvimento
@@ -48,13 +58,14 @@ export const medicines = sqliteTable('medicines', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   // ... outras colunas existentes
-  
+
   // NOVA COLUNA:
   expirationDate: text('expirationDate'), // Data de validade
 });
 ```
 
 Depois execute:
+
 ```bash
 npm run db:generate  # Gera migração
 ```
@@ -77,6 +88,7 @@ O DrizzleDatabaseManager pode conviver com o DatabaseManager atual:
 3. **Seguro**: Testes podem validar equivalência
 
 Para usar:
+
 ```typescript
 // No DIContainer ou onde inicializar
 const drizzleDb = DrizzleDatabaseManager.getInstance();
