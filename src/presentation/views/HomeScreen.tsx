@@ -32,54 +32,6 @@ function HomeScreen() {
     markAsSkipped,
   } = useReminders(doseReminderRepository);
 
-  // Função para debug simples dos dados no banco
-  const debugDatabase = useCallback(async () => {
-    try {
-      console.log('🔍 [HomeScreen] Debug simples iniciado...');
-
-      // Aguardar um pouco para não interferir com a migração
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const dbManager = DIContainer.getInstance().databaseManager;
-
-      try {
-        const db = await dbManager.getDatabase();
-        console.log('🔍 [HomeScreen] Database conectado para debug');
-
-        // Verificar se as tabelas existem
-        const tables = await db.getAllAsync(
-          "SELECT name FROM sqlite_master WHERE type='table'",
-        );
-        console.log(
-          '🔍 [HomeScreen] Tabelas no banco:',
-          tables.map(t => (t as { name: string }).name),
-        );
-
-        // Tentar buscar dados apenas se as tabelas existirem
-        try {
-          const medicineCount = await db.getFirstAsync(
-            'SELECT COUNT(*) as count FROM medicines',
-          );
-          console.log('🔍 [HomeScreen] Total de medicamentos:', medicineCount);
-
-          const reminderCount = await db.getFirstAsync(
-            'SELECT COUNT(*) as count FROM dose_reminders',
-          );
-          console.log('🔍 [HomeScreen] Total de lembretes:', reminderCount);
-        } catch (tableError) {
-          console.log(
-            '🔍 [HomeScreen] Tabelas ainda não estão prontas:',
-            tableError,
-          );
-        }
-      } catch (dbError) {
-        console.log('🔍 [HomeScreen] Database ainda não está pronto:', dbError);
-      }
-    } catch (error) {
-      console.error('🔴 [HomeScreen] Erro no debug simples:', error);
-    }
-  }, []);
-
   // Função para inserir dados de teste via SQL direto
   const insertTestData = useCallback(async () => {
     try {
@@ -208,7 +160,7 @@ function HomeScreen() {
           console.log('🟢 [HomeScreen] Drizzle Database inicializado!');
 
           // 2. Debug do banco (usando o antigo ainda)
-          await debugDatabase();
+          // await debugDatabase();
 
           // 3. Inserir dados de teste (usando o antigo ainda)
           await insertTestData();
@@ -226,18 +178,30 @@ function HomeScreen() {
   );
 
   const handleMarkAsTaken = async (reminderId: number) => {
+    console.log(
+      '🔵 [HomeScreen] handleMarkAsTaken chamado com ID:',
+      reminderId,
+    );
     try {
-      await markAsTaken(reminderId);
+      console.log('🔵 [HomeScreen] Chamando markAsTaken...');
+      const result = await markAsTaken(reminderId);
+      console.log('✅ [HomeScreen] markAsTaken sucesso:', result);
     } catch (err) {
-      console.error('Error marking as taken:', err);
+      console.error('🔴 [HomeScreen] Error marking as taken:', err);
     }
   };
 
   const handleMarkAsSkipped = async (reminderId: number) => {
+    console.log(
+      '🟡 [HomeScreen] handleMarkAsSkipped chamado com ID:',
+      reminderId,
+    );
     try {
-      await markAsSkipped(reminderId);
+      console.log('🟡 [HomeScreen] Chamando markAsSkipped...');
+      const result = await markAsSkipped(reminderId);
+      console.log('✅ [HomeScreen] markAsSkipped sucesso:', result);
     } catch (err) {
-      console.error('Error marking as skipped:', err);
+      console.error('🔴 [HomeScreen] Error marking as skipped:', err);
     }
   };
 
@@ -263,42 +227,95 @@ function HomeScreen() {
       ]}
     >
       <View style={{ flex: 1 }}>
-        <Text
-          style={[
-            { color: colors.text.primary, fontSize: 16, fontWeight: '600' },
-          ]}
-        >
-          Medicamento #{item.medicineId}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text
+            style={[
+              { color: colors.text.primary, fontSize: 16, fontWeight: '600' },
+            ]}
+          >
+            Medicamento #{item.medicineId}
+          </Text>
+          {/* Status Badge */}
+          {item.isTaken && (
+            <View
+              style={{
+                backgroundColor: '#10B981',
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 4,
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
+                TOMADO
+              </Text>
+            </View>
+          )}
+          {item.isSkipped && (
+            <View
+              style={{
+                backgroundColor: '#F59E0B',
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 4,
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
+                PULADO
+              </Text>
+            </View>
+          )}
+        </View>
         <Text style={[{ color: colors.text.secondary, fontSize: 14 }]}>
           {item.scheduledTime.toLocaleTimeString('pt-BR', {
             hour: '2-digit',
             minute: '2-digit',
           })}
+          {item.isTaken && item.takenAt && (
+            <Text style={{ color: '#10B981', fontWeight: '600' }}>
+              {' '}
+              • Tomado às{' '}
+              {item.takenAt.toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+          )}
         </Text>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
+        {/* Botão Tomado */}
         <TouchableOpacity
           onPress={() => handleMarkAsTaken(item.id!)}
           style={{
-            backgroundColor: '#10B981',
+            backgroundColor: item.isTaken ? '#10B981' : '#E5E7EB',
             padding: 8,
             borderRadius: 8,
+            opacity: item.isTaken ? 1 : 0.7,
           }}
         >
-          <Ionicons name="checkmark" size={20} color="white" />
+          <Ionicons
+            name={item.isTaken ? 'checkmark-circle' : 'checkmark'}
+            size={20}
+            color={item.isTaken ? 'white' : '#6B7280'}
+          />
         </TouchableOpacity>
 
+        {/* Botão Pulado */}
         <TouchableOpacity
           onPress={() => handleMarkAsSkipped(item.id!)}
           style={{
-            backgroundColor: '#F59E0B',
+            backgroundColor: item.isSkipped ? '#F59E0B' : '#E5E7EB',
             padding: 8,
             borderRadius: 8,
+            opacity: item.isSkipped ? 1 : 0.7,
           }}
         >
-          <Ionicons name="close" size={20} color="white" />
+          <Ionicons
+            name={item.isSkipped ? 'close-circle' : 'close'}
+            size={20}
+            color={item.isSkipped ? 'white' : '#6B7280'}
+          />
         </TouchableOpacity>
       </View>
     </View>
@@ -426,10 +443,17 @@ function HomeScreen() {
         <FlatList
           data={todayReminders}
           renderItem={renderReminderItem}
-          keyExtractor={item => item.id?.toString() || ''}
+          keyExtractor={item =>
+            `${item.id}-${item.isTaken}-${item.isSkipped}-${item.takenAt?.getTime() || 0}`
+          }
           ListEmptyComponent={EmptyState}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={todayReminders.length === 0 ? { flex: 1 } : {}}
+          extraData={todayReminders.map(r => ({
+            isTaken: r.isTaken,
+            isSkipped: r.isSkipped,
+            takenAt: r.takenAt,
+          }))}
         />
       </View>
     </SafeAreaView>
