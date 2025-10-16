@@ -18,7 +18,7 @@ interface UseModalReturn {
     title: string,
     message?: string,
     onConfirm?: () => void,
-    onCancel?: () => void
+    onCancel?: () => void,
   ) => void;
   showSuccess: (title: string, message?: string, onClose?: () => void) => void;
   showError: (title: string, message?: string, onClose?: () => void) => void;
@@ -49,7 +49,7 @@ export function useModal(): UseModalReturn {
         buttons: buttons || [{ text: 'OK', onPress: hideModal }],
       });
     },
-    [showModal, hideModal]
+    [showModal, hideModal],
   );
 
   const showConfirm = useCallback(
@@ -57,7 +57,7 @@ export function useModal(): UseModalReturn {
       title: string,
       message?: string,
       onConfirm?: () => void,
-      onCancel?: () => void
+      onCancel?: () => void,
     ) => {
       showModal({
         title,
@@ -84,7 +84,7 @@ export function useModal(): UseModalReturn {
         ],
       });
     },
-    [showModal, hideModal]
+    [showModal, hideModal],
   );
 
   const showSuccess = useCallback(
@@ -106,7 +106,7 @@ export function useModal(): UseModalReturn {
         ],
       });
     },
-    [showModal, hideModal]
+    [showModal, hideModal],
   );
 
   const showError = useCallback(
@@ -128,7 +128,7 @@ export function useModal(): UseModalReturn {
         ],
       });
     },
-    [showModal, hideModal]
+    [showModal, hideModal],
   );
 
   const showInfo = useCallback(
@@ -150,7 +150,7 @@ export function useModal(): UseModalReturn {
         ],
       });
     },
-    [showModal, hideModal]
+    [showModal, hideModal],
   );
 
   const Modal = useCallback(
@@ -165,7 +165,7 @@ export function useModal(): UseModalReturn {
         onBackdropPress={hideModal}
       />
     ),
-    [visible, modalConfig, hideModal]
+    [visible, modalConfig, hideModal],
   );
 
   return {
